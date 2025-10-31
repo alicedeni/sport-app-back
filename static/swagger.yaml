@@ -1,0 +1,110 @@
+swagger: "2.0"
+info:
+  description: "API for my app"
+  version: "1.0.0"
+  title: "My App API"
+host: "team2go-api.ru"
+basePath: "/"
+schemes:
+  - "https"
+paths:
+  /user/{user_id}/list_of_activities:
+    get:
+      summary: "List of activities"
+      parameters:
+        - name: "user_id"
+          in: "path"
+          description: "ID of the user"
+          required: true
+          type: "integer"
+      responses:
+        200:
+          description: "List of activities"
+          schema:
+            type: "array"
+            items:
+              type: "object"
+              properties:
+                type:
+                  type: "string"
+                scorecard:
+                  type: "string"
+                color:
+                  type: "string"
+                tag:
+                  type: "string"
+
+  /upload_image:
+    post:
+      summary: "Upload an image file"
+      description: "This endpoint allows uploading an image file."
+      consumes:
+        - "multipart/form-data"
+      parameters:
+        - name: "image"
+          in: "formData"
+          type: "file"
+          required: true
+          description: "The image file to upload"
+      responses:
+        200:
+          description: "Image successfully uploaded"
+          schema:
+            type: "object"
+            properties:
+              imageUrl:
+                type: "string"
+                description: "The URL of the uploaded image"
+        400:
+          description: "No image provided or no image selected"
+        500:
+          description: "Upload failed"
+
+  /user/activities:
+    post:
+      summary: "Create a new activity"
+      description: "Allows the user to create a new activity."
+      parameters:
+        - in: "body"
+          name: "body"
+          description: "Activity details"
+          required: true
+          schema:
+            type: "object"
+            properties:
+              type:
+                type: "string"
+              scorecard:
+                type: "string"
+              color:
+                type: "string"
+              tag:
+                type: "string"
+      responses:
+        201:
+          description: "Activity created successfully"
+        400:
+          description: "Invalid input data"
+  /user/posts:
+    get:
+      summary: "Get user posts"
+      description: "Retrieve a list of all posts created by the user."
+      responses:
+        200:
+          description: "List of user posts"
+          schema:
+            type: "array"
+            items:
+              type: "object"
+              properties:
+                post_id:
+                  type: "integer"
+                title:
+                  type: "string"
+                content:
+                  type: "string"
+                created_at:
+                  type: "string"
+                  format: "date-time"
+        404:
+          description: "No posts found"
