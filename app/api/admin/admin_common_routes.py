@@ -13,6 +13,59 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def get_timeline_stats(session, from_date, to_date, interval):
+    """
+    Получает статистику с группировкой по интервалам
+    
+    Args:
+        session: SQLAlchemy session
+        from_date: начальная дата
+        to_date: конечная дата
+        interval: day/week/month
+        
+    Returns:
+        list: Данные по периодам
+    """
+    from sqlalchemy import func, cast, Date
+    
+    if interval == 'day':
+        date_trunc = func.date_trunc('day', Feed.time_of_publication)
+    elif interval == 'week':
+        date_trunc = func.date_trunc('week', Feed.time_of_publication)
+    elif interval == 'month':
+        date_trunc = func.date_trunc('month', Feed.time_of_publication)
+    else:
+        return []
+    
+    query = session.query(
+        cast(date_trunc, Date).label('period'),
+        func.count(Feed.id).label('posts'),
+        func.sum(Feed.calories).label('calories'),
+        func.sum(Feed.points).label('points'),
+        func.count(func.distinct(Feed.author_id)).label('active_users')
+    )
+    
+    if from_date:
+        query = query.filter(Feed.time_of_publication >= from_date)
+    if to_date:
+        to_date_end = to_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        query = query.filter(Feed.time_of_publication <= to_date_end)
+    
+    results = query.group_by('period').order_by('period').all()
+    
+    timeline = []
+    for period, posts, calories, points, users in results:
+        timeline.append({
+            'date': period.strftime('%Y-%m-%d'),
+            'posts': posts,
+            'calories': int(calories or 0),
+            'points': int(points or 0),
+            'activeUsers': users
+        })
+    
+    return timeline
+
+
 def init_admin_common_routes(app):
     @app.route('/admin/settings', methods=['GET'])
     @token_required
@@ -117,10 +170,19 @@ def init_admin_common_routes(app):
     @token_required
     @admin_required
     def get_stats_overview():
-        """Общая статистика"""
+        """Общая статистика с группировкой по интервалам"""
         try:
             from_date = parse_date_param(request.args.get('from'))
             to_date = parse_date_param(request.args.get('to'))
+            interval = request.args.get('interval', 'all')  # day, week, month, all
+            
+            if interval != 'all' and not from_date:
+                if interval == 'day':
+                    from_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                elif interval == 'week':
+                    from_date = datetime.now() - timedelta(days=7)
+                elif interval == 'month':
+                    from_date = datetime.now() - timedelta(days=30)
             
             with get_session() as session:
                 query = session.query(Feed)
@@ -131,16 +193,38 @@ def init_admin_common_routes(app):
                     query = query.filter(Feed.time_of_publication <= to_date_end)
                 
                 total_posts = query.count()
-                total_calories = session.query(func.sum(Feed.calories)).scalar() or 0
-                total_points = session.query(func.sum(Feed.points)).scalar() or 0
-                active_users = session.query(func.count(func.distinct(Feed.author_id))).scalar() or 0
                 
-                return jsonify(format_response({
+                calories_query = session.query(func.sum(Feed.calories))
+                points_query = session.query(func.sum(Feed.points))
+                users_query = session.query(func.count(func.distinct(Feed.author_id)))
+                
+                if from_date:
+                    calories_query = calories_query.filter(Feed.time_of_publication >= from_date)
+                    points_query = points_query.filter(Feed.time_of_publication >= from_date)
+                    users_query = users_query.filter(Feed.time_of_publication >= from_date)
+                
+                if to_date:
+                    to_date_end = to_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    calories_query = calories_query.filter(Feed.time_of_publication <= to_date_end)
+                    points_query = points_query.filter(Feed.time_of_publication <= to_date_end)
+                    users_query = users_query.filter(Feed.time_of_publication <= to_date_end)
+                
+                total_calories = calories_query.scalar() or 0
+                total_points = points_query.scalar() or 0
+                active_users = users_query.scalar() or 0
+                
+                response_data = {
                     'totalPosts': total_posts,
                     'totalCalories': int(total_calories),
                     'totalPoints': int(total_points),
                     'activeUsers': active_users
-                }))
+                }
+                
+                if interval != 'all':
+                    timeline_data = get_timeline_stats(session, from_date, to_date, interval)
+                    response_data['timeline'] = timeline_data
+                
+                return jsonify(format_response(response_data))
         except Exception as e:
             return jsonify(format_response(None, 500, str(e))), 500
 
@@ -344,6 +428,16 @@ def init_admin_common_routes(app):
         try:
             from_date = parse_date_param(request.args.get('from'))
             to_date = parse_date_param(request.args.get('to'))
+            interval = request.args.get('interval', 'all')  # day, week, month, all
+            
+            if interval != 'all' and not from_date:
+                if interval == 'day':
+                    from_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                elif interval == 'week':
+                    from_date = datetime.now() - timedelta(days=7)
+                elif interval == 'month':
+                    from_date = datetime.now() - timedelta(days=30)
+            
             to_date_end = to_date.replace(hour=23, minute=59, second=59, microsecond=999999) if to_date else None
             
             with get_session() as session:
@@ -395,7 +489,7 @@ def init_admin_common_routes(app):
                         'totalPoints': int(points) if points else 0
                     })
                 
-                return jsonify(format_response({
+                response_data = {
                     'totalPosts': total_posts,
                     'totalCalories': int(total_calories),
                     'totalPoints': int(total_points),
@@ -403,7 +497,13 @@ def init_admin_common_routes(app):
                     'totalUsers': total_users,
                     'totalTeams': total_teams,
                     'activities': activities_data
-                }))
+                }
+                
+                if interval != 'all':
+                    timeline_data = get_timeline_stats(session, from_date, to_date, interval)
+                    response_data['timeline'] = timeline_data
+                
+                return jsonify(format_response(response_data))
         except Exception as e:
             return jsonify(format_response(None, 500, str(e))), 500
 
@@ -684,8 +784,18 @@ def init_admin_common_routes(app):
         try:
             scope = request.args.get('scope', 'overview')
             export_format = request.args.get('format', 'csv')
+            interval = request.args.get('interval', 'all')
             from_date = parse_date_param(request.args.get('from'))
             to_date = parse_date_param(request.args.get('to'))
+            
+            if interval != 'all' and not from_date:
+                if interval == 'day':
+                    from_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                elif interval == 'week':
+                    from_date = datetime.now() - timedelta(days=7)
+                elif interval == 'month':
+                    from_date = datetime.now() - timedelta(days=30)
+            
             to_date_end = to_date.replace(hour=23, minute=59, second=59, microsecond=999999) if to_date else None
 
             if export_format != 'csv':

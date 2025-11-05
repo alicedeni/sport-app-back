@@ -72,17 +72,21 @@ def init_admin_moderation_routes(app):
                         'authorName': user.name,
                         'authorSurname': user.surname,
                         'authorEmail': user.email,
-                        'status': 'hidden' if feed.status else 'visible',
+                        'activityId': feed.activity_id,
                         'activityName': activity.name if activity else None,
                         'activityTag': activity.tag if activity else None,
                         'distance': feed.distance,
+                        'duration': feed.duration,
                         'calories': feed.calories,
                         'points': feed.points,
-                        'duration': feed.duration,
+                        'steps': feed.steps,
                         'description': feed.commentactivity,
                         'image': feed.image,
+                        'status': 'hidden' if feed.status else 'visible',
                         'timeOfPublication': feed.time_of_publication.isoformat() if feed.time_of_publication else None,
-                        'activityDate': feed.activity_date.isoformat() if feed.activity_date else None,
+                        'timeBeginning': feed.time_beginning.strftime('%H:%M') if feed.time_beginning else None,
+                        'timeEnding': feed.time_ending.strftime('%H:%M') if feed.time_ending else None,
+                        'activityDate': feed.activity_date.strftime('%Y-%m-%d') if feed.activity_date else None,
                         'likeCount': like_count,
                         'commentCount': comment_count
                     })
@@ -128,6 +132,9 @@ def init_admin_moderation_routes(app):
                 old_points = int(post.points or 0)
                 author_id = post.author_id
                 
+                activity_params_changed = any(key in validated_data for key in ['activity_id', 'distance', 'duration', 'steps'])
+                manual_points_changed = 'points' in validated_data or 'calories' in validated_data
+                
                 if 'activity_id' in validated_data:
                     post.activity_id = validated_data['activity_id']
                 
@@ -140,17 +147,60 @@ def init_admin_moderation_routes(app):
                 if 'steps' in validated_data:
                     post.steps = validated_data['steps']
                 
-                if 'calories' in validated_data:
-                    post.calories = validated_data['calories']
+                if 'time_beginning' in validated_data:
+                    from datetime import time as time_obj
+                    time_str = validated_data['time_beginning']
+                    post.time_beginning = time_obj(*map(int, time_str.split(':')))
                 
-                if 'points' in validated_data:
-                    post.points = validated_data['points']
+                if 'time_ending' in validated_data:
+                    from datetime import time as time_obj
+                    time_str = validated_data['time_ending']
+                    post.time_ending = time_obj(*map(int, time_str.split(':')))
+                
+                if 'activity_date' in validated_data:
+                    from datetime import datetime as dt
+                    post.activity_date = dt.strptime(validated_data['activity_date'], '%Y-%m-%d').date()
                 
                 if 'description' in validated_data:
                     post.commentactivity = validated_data['description']
                 
                 if 'status' in validated_data:
                     post.status = validated_data['status'] == 'hidden'
+                
+                if activity_params_changed and not manual_points_changed:
+                    try:
+                        from app.infra.services.points_service_client import get_points_client
+                        
+                        activity = session.query(Activity.tag).filter(
+                            Activity.id == post.activity_id
+                        ).first()
+                        
+                        if activity:
+                            activity_tag = activity[0]
+                            activity_data = {
+                                'distance': float(post.distance) if post.distance else None,
+                                'duration': post.duration,
+                                'steps': post.steps or 0
+                            }
+                            
+                            points_client = get_points_client()
+                            metrics = points_client.calculate_activity_metrics(
+                                activity_tag=activity_tag,
+                                activity_input_data=activity_data,
+                                user_id=author_id
+                            )
+                            
+                            post.calories = metrics.get('calories_burned')
+                            post.points = metrics.get('activity_points')
+                            logger.info(f"Auto-recalculated post {post_id}: calories={post.calories}, points={post.points}")
+                    except Exception as e:
+                        logger.error(f"Error auto-recalculating: {e}", exc_info=True)
+                
+                if 'calories' in validated_data:
+                    post.calories = validated_data['calories']
+                
+                if 'points' in validated_data:
+                    post.points = validated_data['points']
                 
                 session.commit()
                 

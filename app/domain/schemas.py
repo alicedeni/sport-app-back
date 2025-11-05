@@ -152,6 +152,9 @@ class AdminPostEditSchema(Schema):
     steps = fields.Int(validate=validate.Range(min=0, max=100000))
     description = fields.Str(validate=validate.Length(max=500))
     status = fields.Str(validate=validate.OneOf(['visible', 'hidden']))
+    time_beginning = fields.Str(validate=validate.Regexp(r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$', error="Формат HH:MM"))
+    time_ending = fields.Str(validate=validate.Regexp(r'^([01]?[0-9]|2[0-3]):[0-5][0-9]$', error="Формат HH:MM"))
+    activity_date = fields.Str(validate=validate.Regexp(r'^\d{4}-\d{2}-\d{2}$', error="Формат YYYY-MM-DD"))
 
 
 class AdminCommentStatusSchema(Schema):
