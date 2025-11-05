@@ -91,7 +91,9 @@ def init_user_routes(app):
                     User.points,
                     User.avatar,
                     User.league,
-                    Team.name
+                    Team.name,
+                    User.f_hello,
+                    User.show_welcome
                 ).join(Team, Team.id == User.team_id, isouter=True).filter(User.id == user_id)
                 user_profile = q.first()
 
@@ -119,7 +121,9 @@ def init_user_routes(app):
                     'team': user_profile[9],
                     'league': user_profile[8],
                     'place_league': place_league,
-                    'target_weight': target_weight
+                    'target_weight': target_weight,
+                    'f_hello': bool(user_profile[10]) if user_profile[10] is not None else False,
+                    'show_welcome': bool(user_profile[11]) if user_profile[11] is not None else True
                 }
 
                 return jsonify({'status': 200, 'profile': profile_data})

@@ -148,7 +148,6 @@ class ActivityCalculationService:
         duration_hours = self.parse_duration(activity_data.get('duration'))
         distance = activity_data.get('distance')
         
-        # Безопасное приведение distance к числу
         if distance:
             try:
                 distance = float(distance)
@@ -158,7 +157,6 @@ class ActivityCalculationService:
         # Ходьба (activity_id == 0)
         if activity_id == self.ACTIVITY_WALK:
             steps = activity_data.get('steps', 0)
-            # Приводим steps к числу (может прийти как строка)
             try:
                 steps = int(steps) if steps else 0
             except (ValueError, TypeError):
@@ -193,7 +191,6 @@ class ActivityCalculationService:
         # Велосипед (activity_id == 2)
         elif activity_id == self.ACTIVITY_BIKE:
             if distance:
-                # Для велосипеда distance приходит в метрах, конвертируем в км
                 distance = distance * self.METERS_TO_KM
                 if not duration_hours:
                     user_speed = self.get_user_speed(user_id, activity_id)
@@ -262,7 +259,6 @@ class ActivityCalculationService:
         # Ходьба (activity_id == 0)
         if activity_id == self.ACTIVITY_WALK:
             steps = activity_data.get('steps', 0)
-            # Приводим steps к числу (может прийти как строка)
             try:
                 steps = int(steps) if steps else 0
             except (ValueError, TypeError):
@@ -294,7 +290,6 @@ class ActivityCalculationService:
         # Бег, плавание (activity_id in [1, 5])
         elif activity_id in [self.ACTIVITY_RUN, self.ACTIVITY_SWIM]:
             distance = activity_data.get('distance', 0)
-            # Безопасное приведение к числу
             try:
                 distance = float(distance) if distance else 0
             except (ValueError, TypeError):
@@ -313,7 +308,6 @@ class ActivityCalculationService:
         # Велосипед (activity_id == 2)
         elif activity_id == self.ACTIVITY_BIKE:
             distance = activity_data.get('distance', 0)
-            # Безопасное приведение к числу
             try:
                 distance = float(distance) if distance else 0
             except (ValueError, TypeError):
