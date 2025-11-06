@@ -1,7 +1,7 @@
 from flask import jsonify, request, make_response
 from app.infra.db.sqlalchemy_db import get_session
 from sqlalchemy import func, and_, case
-from app.domain.models import AppSettings, FeatureFlag, ErrorLog, SystemLog, User, Feed, Team, Activity
+from app.domain.models import AppSettings, FeatureFlag, ErrorLog, SystemLog, User, Feed, Team, Activity, ChallengeNew
 from app.api.public.auth_routes import token_required
 from app.api.admin.admin_middleware import admin_required, log_audit
 from app.domain.schemas import AdminSettingsSchema, AdminFeatureFlagsSchema, AdminErrorStatusSchema, validate_json_data
@@ -213,11 +213,21 @@ def init_admin_common_routes(app):
                 total_points = points_query.scalar() or 0
                 active_users = users_query.scalar() or 0
                 
+                now = datetime.utcnow()
+                active_challenges = session.query(func.count(ChallengeNew.id)).filter(
+                    and_(
+                        ChallengeNew.status == 'active',
+                        ChallengeNew.start_at <= now,
+                        ChallengeNew.end_at >= now
+                    )
+                ).scalar() or 0
+                
                 response_data = {
                     'totalPosts': total_posts,
                     'totalCalories': int(total_calories),
                     'totalPoints': int(total_points),
-                    'activeUsers': active_users
+                    'activeUsers': active_users,
+                    'activeChallenges': active_challenges
                 }
                 
                 if interval != 'all':
@@ -466,6 +476,15 @@ def init_admin_common_routes(app):
                 total_users = session.query(func.count(User.id)).scalar() or 0
                 total_teams = session.query(func.count(Team.id)).scalar() or 0
                 
+                now = datetime.utcnow()
+                active_challenges = session.query(func.count(ChallengeNew.id)).filter(
+                    and_(
+                        ChallengeNew.status == 'active',
+                        ChallengeNew.start_at <= now,
+                        ChallengeNew.end_at >= now
+                    )
+                ).scalar() or 0
+                
                 activity_stats = session.query(
                     Activity.name,
                     Activity.tag,
@@ -496,6 +515,7 @@ def init_admin_common_routes(app):
                     'activeUsers': active_users,
                     'totalUsers': total_users,
                     'totalTeams': total_teams,
+                    'activeChallenges': active_challenges,
                     'activities': activities_data
                 }
                 
@@ -849,15 +869,39 @@ def init_admin_common_routes(app):
                     if to_date_end:
                         q = q.filter(Feed.time_of_publication <= to_date_end)
                     total_posts = q.count()
-                    total_calories = session.query(func.sum(Feed.calories)).scalar() or 0
-                    total_points = session.query(func.sum(Feed.points)).scalar() or 0
-                    active_users = session.query(func.count(func.distinct(Feed.author_id))).scalar() or 0
+                    
+                    calories_q = session.query(func.sum(Feed.calories))
+                    points_q = session.query(func.sum(Feed.points))
+                    users_q = session.query(func.count(func.distinct(Feed.author_id)))
+                    
+                    if from_date:
+                        calories_q = calories_q.filter(Feed.time_of_publication >= from_date)
+                        points_q = points_q.filter(Feed.time_of_publication >= from_date)
+                        users_q = users_q.filter(Feed.time_of_publication >= from_date)
+                    if to_date_end:
+                        calories_q = calories_q.filter(Feed.time_of_publication <= to_date_end)
+                        points_q = points_q.filter(Feed.time_of_publication <= to_date_end)
+                        users_q = users_q.filter(Feed.time_of_publication <= to_date_end)
+                    
+                    total_calories = calories_q.scalar() or 0
+                    total_points = points_q.scalar() or 0
+                    active_users = users_q.scalar() or 0
+                    
+                    now = datetime.utcnow()
+                    active_challenges = session.query(func.count(ChallengeNew.id)).filter(
+                        and_(
+                            ChallengeNew.status == 'active',
+                            ChallengeNew.start_at <= now,
+                            ChallengeNew.end_at >= now
+                        )
+                    ).scalar() or 0
 
                     writer.writerow(['Metric', 'Value'])
                     writer.writerow(['Total posts', total_posts])
                     writer.writerow(['Total calories', int(total_calories)])
                     writer.writerow(['Total points', int(total_points)])
                     writer.writerow(['Active users', int(active_users)])
+                    writer.writerow(['Active challenges', int(active_challenges)])
                     filename = 'overview.csv'
 
             csv_text = output.getvalue()

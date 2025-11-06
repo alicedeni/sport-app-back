@@ -11,7 +11,7 @@ from app.domain.models import (
     User, Team, Activity, Feed, Like, Comment, CommentLike,
     Challenge, UserChallenge, UserChallengeStatus, TokenBlacklist,
     UserProgress, PasswordReset, AuditLog, AppSettings, FeatureFlag,
-    ErrorLog, SystemLog, Task
+    ErrorLog, SystemLog, Task, ChallengeNew, ChallengeParticipantNew
 )
 from sqlalchemy import text
 import logging
@@ -28,6 +28,8 @@ def init_database():
             result = conn.execute(text("SELECT version();"))
             version = result.fetchone()[0]
             logger.info(f"Подключение успешно: {version}")
+        
+        init_challenges_schema()
         
         logger.info("Создание таблиц...")
         Base.metadata.create_all(bind=engine)
@@ -102,6 +104,23 @@ def add_initial_data():
         logger.error(f"✗ Ошибка при добавлении данных: {e}")
 
 
+def init_challenges_schema():
+    """Создать схему challenges (таблицы создадутся через Base.metadata.create_all)"""
+    try:
+        logger.info("Создание схемы challenges...")
+        
+        with engine.connect() as conn:
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS challenges"))
+            conn.commit()
+        
+        logger.info("✓ Схема challenges создана")
+        
+    except Exception as e:
+        logger.error(f"✗ Ошибка при создании схемы: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def drop_all_tables():
     logger.warning("⚠ ВНИМАНИЕ! Удаление всех таблиц из базы данных!")
     confirm = input("Введите 'YES' для подтверждения: ")
@@ -109,6 +128,12 @@ def drop_all_tables():
     if confirm == 'YES':
         try:
             logger.info("Удаление таблиц...")
+            
+            with engine.connect() as conn:
+                conn.execute(text("DROP SCHEMA IF EXISTS challenges CASCADE"))
+                conn.commit()
+                logger.info("✓ Схема challenges удалена")
+            
             Base.metadata.drop_all(bind=engine)
             logger.info("✓ Все таблицы удалены")
             return True

@@ -162,7 +162,7 @@ def init_post_routes(app):
             'image': data.get('image'),
             'other': data.get('other'),
             'distance': data.get('distance'),
-            'time_of_publication': datetime.now(),
+            'time_of_publication': datetime.utcnow(),
         }
 
     def save_activity(user_id, activity_data, activity_id, distance, calories_burned, activity_points, duration_hours):
@@ -204,6 +204,13 @@ def init_post_routes(app):
             if activity_points:
                 session.query(User).filter(User.id == user_id).update({User.points: (User.points + activity_points)})
             session.commit()
+            
+            try:
+                from app.services.challenges_service import get_challenges_service
+                challenges_service = get_challenges_service()
+                challenges_service.update_challenge_progress(user_id, feed)
+            except Exception as e:
+                logger.error(f"Failed to update challenges progress: {e}", exc_info=True)
 
     @app.route('/user/preview_post', methods=['POST'])
     @token_required
@@ -282,8 +289,7 @@ def init_post_routes(app):
                 duration = post[12]
                 hours, minutes = map(int, duration.split(':')) if duration else (0, 0)
                 formatted_duration = f"{hours:02}:{minutes:02}"
-                timestamp_obj = post[5].replace(tzinfo=pytz.UTC) + timedelta(hours=3)
-                timestamp_str = timestamp_obj.strftime('%Y-%m-%d %H:%M:%S')
+                timestamp_str = post[5].isoformat() + 'Z' if post[5] else None
                 activity_type = post[21] if post[10] == 'other' and post[21] is not None else post[7]
                 formatted_post = {
                     'id': post[0], 'username': post[1], 'name': post[2], 'fireCount': post[3], 'miniAvatar': post[4],

@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Date, Time, ForeignKey, UniqueConstraint, Float
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Date, Time, ForeignKey, UniqueConstraint, Float, CheckConstraint, Index
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 from app.infra.db.sqlalchemy_db import Base
 from datetime import datetime
@@ -108,35 +109,6 @@ class CommentLike(Base):
     UniqueConstraint('user_id', 'comment_id', name='comment_likes_user_comment_unique')
 
 
-class Challenge(Base):
-    __tablename__ = 'challenges'
-    id = Column(Integer, primary_key=True)
-    name = Column(String(255))
-    points = Column(Integer)
-    description = Column(Text, nullable=True)
-    start_at = Column(DateTime, nullable=True)
-    end_at = Column(DateTime, nullable=True)
-    status = Column(String(20), default='draft')
-    league = Column(String(50), nullable=True)
-    cover_image = Column(Text, nullable=True)
-
-
-class UserChallenge(Base):
-    __tablename__ = 'user_challenges'
-    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
-    challenge_id = Column(Integer, ForeignKey('challenges.id'), primary_key=True)
-    progress = Column(Integer)
-    status = Column(String(50))
-
-
-class UserChallengeStatus(Base):
-    __tablename__ = 'user_challenge_statuses'
-    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
-    status_challenge1 = Column(String(20), default='нет участия')
-    status_challenge2 = Column(String(20), default='нет участия')
-    status_challenge3 = Column(String(20), default='нет участия')
-
-
 class TokenBlacklist(Base):
     __tablename__ = 'token_blacklist'
 
@@ -242,3 +214,70 @@ class Task(Base):
     order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ChallengeNew(Base):
+    """Модель челленджа (схема challenges)"""
+    __tablename__ = 'challenges'
+    __table_args__ = (
+        CheckConstraint("challenge_type IN ('team', 'individual')", name='check_challenge_type'),
+        CheckConstraint("league IN ('bronze', 'silver', 'gold') OR league IS NULL", name='check_league'),
+        CheckConstraint("metric_type IN ('distance', 'calories', 'points', 'steps', 'duration')", name='check_metric_type'),
+        CheckConstraint("target_value > 0", name='check_target_value'),
+        CheckConstraint("verification_mode IN ('auto', 'manual', 'hybrid')", name='check_verification_mode'),
+        CheckConstraint("reward_points >= 0", name='check_reward_points'),
+        CheckConstraint("status IN ('draft', 'active', 'completed', 'archived')", name='check_status'),
+        CheckConstraint("end_at > start_at", name='check_dates'),
+        Index('idx_challenges_status', 'status'),
+        Index('idx_challenges_dates', 'start_at', 'end_at'),
+        Index('idx_challenges_type', 'challenge_type'),
+        Index('idx_challenges_league', 'league'),
+        {'schema': 'challenges'}
+    )
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    challenge_type = Column(String(20), nullable=False)
+    league = Column(String(20))
+    metric_type = Column(String(50), nullable=False)
+    target_value = Column(Float, nullable=False)
+    verification_mode = Column(String(20), nullable=False, default='auto')
+    activity_types = Column(ARRAY(String))
+    reward_points = Column(Integer, default=0)
+    reward_badge = Column(String(100))
+    start_at = Column(DateTime, nullable=False)
+    end_at = Column(DateTime, nullable=False)
+    status = Column(String(20), default='draft')
+    cover_image = Column(String(255))
+    created_by = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ChallengeParticipantNew(Base):
+    """Модель участника челленджа (схема challenges)"""
+    __tablename__ = 'challenge_participants'
+    __table_args__ = (
+        CheckConstraint(
+            "(user_id IS NOT NULL AND team_id IS NULL) OR (user_id IS NULL AND team_id IS NOT NULL)",
+            name='check_participant'
+        ),
+        CheckConstraint("current_value >= 0", name='check_current_value'),
+        Index('idx_participants_challenge', 'challenge_id'),
+        Index('idx_participants_user', 'user_id'),
+        Index('idx_participants_team', 'team_id'),
+        Index('idx_participants_completed', 'completed'),
+        UniqueConstraint('challenge_id', 'user_id', name='uq_challenge_user'),
+        UniqueConstraint('challenge_id', 'team_id', name='uq_challenge_team'),
+        {'schema': 'challenges'}
+    )
+    
+    id = Column(Integer, primary_key=True)
+    challenge_id = Column(Integer, ForeignKey('challenges.challenges.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer)
+    team_id = Column(Integer)
+    current_value = Column(Float, default=0)
+    completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+    last_activity_at = Column(DateTime)

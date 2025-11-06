@@ -3,8 +3,8 @@ from flask_cors import CORS
 from flasgger import Swagger
 from flask_swagger_ui import get_swaggerui_blueprint
 from app.api.public import (auth_routes, post_routes, user_routes, like_routes, comment_routes, rating_routes,
-                            challenges_routes, activities_routes, aws_routes, password_routes)
-from app.api.admin import admin_users_routes, admin_common_routes, admin_challenges_routes, admin_moderation_routes, admin_teams_routes
+                            activities_routes, aws_routes, password_routes, challenges_api_routes)
+from app.api.admin import admin_users_routes, admin_common_routes, admin_moderation_routes, admin_teams_routes, admin_challenges_api_routes
 from admin_scripts import create_teams, recalc_points, import_db, create_leagues
 from config import config
 import os
@@ -40,15 +40,15 @@ user_routes.init_user_routes(app)
 like_routes.init_like_routes(app)
 comment_routes.init_comment_routes(app)
 rating_routes.init_rating_routes(app)
-challenges_routes.init_challenges_routes(app)
 activities_routes.init_activities_routes(app)
 aws_routes.init_aws_routes(app)
 password_routes.init_password_routes(app)
+challenges_api_routes.init_challenges_api_routes(app)
 admin_users_routes.init_admin_users_routes(app)
 admin_common_routes.init_admin_common_routes(app)
-admin_challenges_routes.init_admin_challenges_routes(app)
 admin_moderation_routes.init_admin_moderation_routes(app)
 admin_teams_routes.init_admin_teams_routes(app)
+admin_challenges_api_routes.init_admin_challenges_api_routes(app)
 
 # create_leagues.create_leagues()
 # create_teams.create_teams()
