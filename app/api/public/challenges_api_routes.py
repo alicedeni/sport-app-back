@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.infra.db.sqlalchemy_db import get_session
-from app.domain.models import ChallengeNew, ChallengeParticipantNew, User
+from app.domain.models import Challenge, ChallengeParticipant, User, Team
 from app.api.public.auth_routes import token_required
 from sqlalchemy import and_, or_, func, case
 from datetime import datetime
@@ -25,16 +25,16 @@ def init_challenges_api_routes(app):
             
             with get_session() as session:
                 query = session.query(
-                    ChallengeNew,
-                    ChallengeParticipantNew,
-                    func.count(ChallengeParticipantNew.id).over(
-                        partition_by=ChallengeNew.id
+                    Challenge,
+                    ChallengeParticipant,
+                    func.count(ChallengeParticipant.id).over(
+                        partition_by=Challenge.id
                     ).label('participants_count')
                 ).outerjoin(
-                    ChallengeParticipantNew,
+                    ChallengeParticipant,
                     and_(
-                        ChallengeNew.id == ChallengeParticipantNew.challenge_id,
-                        ChallengeParticipantNew.user_id == user_id
+                        Challenge.id == ChallengeParticipant.challenge_id,
+                        ChallengeParticipant.user_id == user_id
                     )
                 )
                 
@@ -42,43 +42,43 @@ def init_challenges_api_routes(app):
                 if status == 'active':
                     query = query.filter(
                         and_(
-                            ChallengeNew.status == 'active',
-                            ChallengeNew.start_at <= now,
-                            ChallengeNew.end_at >= now
+                            Challenge.status == 'active',
+                            Challenge.start_at <= now,
+                            Challenge.end_at >= now
                         )
                     )
                 elif status == 'upcoming':
                     query = query.filter(
                         and_(
-                            ChallengeNew.status == 'active',
-                            ChallengeNew.start_at > now
+                            Challenge.status == 'active',
+                            Challenge.start_at > now
                         )
                     )
                 elif status == 'completed':
-                    query = query.filter(ChallengeNew.status == 'completed')
+                    query = query.filter(Challenge.status == 'completed')
                 elif status != 'all':
-                    query = query.filter(ChallengeNew.status == status)
+                    query = query.filter(Challenge.status == status)
                 
                 if challenge_type:
-                    query = query.filter(ChallengeNew.challenge_type == challenge_type)
+                    query = query.filter(Challenge.challenge_type == challenge_type)
                 
                 if league:
                     query = query.filter(
                         or_(
-                            ChallengeNew.league == league,
-                            ChallengeNew.league.is_(None)
+                            Challenge.league == league,
+                            Challenge.league.is_(None)
                         )
                     )
                 
                 total = query.count()
                 
                 offset = (page - 1) * limit
-                rows = query.order_by(ChallengeNew.start_at.desc()).limit(limit).offset(offset).all()
+                rows = query.order_by(Challenge.start_at.desc()).limit(limit).offset(offset).all()
                 
                 challenges_data = []
                 for challenge, participant, participants_count in rows:
-                    real_participants_count = session.query(func.count(ChallengeParticipantNew.id)).filter(
-                        ChallengeParticipantNew.challenge_id == challenge.id
+                    real_participants_count = session.query(func.count(ChallengeParticipant.id)).filter(
+                        ChallengeParticipant.challenge_id == challenge.id
                     ).scalar() or 0
                     
                     challenge_dict = {
@@ -107,7 +107,10 @@ def init_challenges_api_routes(app):
                             'current_value': participant.current_value,
                             'percentage': round(percentage, 1),
                             'completed': participant.completed,
-                            'last_activity': participant.last_activity_at.isoformat() if participant.last_activity_at else None
+                            'last_activity': participant.last_activity_at.isoformat() if participant.last_activity_at else None,
+                            'reward_granted': participant.reward_granted,
+                            'reward_granted_at': participant.reward_granted_at.isoformat() if participant.reward_granted_at else None,
+                            'reward_points_awarded': participant.reward_points_awarded
                         }
                     else:
                         challenge_dict['my_progress'] = {'joined': False}
@@ -141,15 +144,15 @@ def init_challenges_api_routes(app):
             
             with get_session() as session:
                 query = session.query(
-                    ChallengeNew,
-                    ChallengeParticipantNew
+                    Challenge,
+                    ChallengeParticipant
                 ).outerjoin(
-                    ChallengeParticipantNew,
+                    ChallengeParticipant,
                     and_(
-                        ChallengeNew.id == ChallengeParticipantNew.challenge_id,
-                        ChallengeParticipantNew.user_id == user_id
+                        Challenge.id == ChallengeParticipant.challenge_id,
+                        ChallengeParticipant.user_id == user_id
                     )
-                ).filter(ChallengeNew.id == challenge_id)
+                ).filter(Challenge.id == challenge_id)
                 
                 result = query.first()
                 
@@ -158,8 +161,8 @@ def init_challenges_api_routes(app):
                 
                 challenge, participant = result
                 
-                participants_count = session.query(func.count(ChallengeParticipantNew.id)).filter(
-                    ChallengeParticipantNew.challenge_id == challenge.id
+                participants_count = session.query(func.count(ChallengeParticipant.id)).filter(
+                    ChallengeParticipant.challenge_id == challenge.id
                 ).scalar() or 0
                 
                 challenge_dict = {
@@ -183,11 +186,11 @@ def init_challenges_api_routes(app):
                 
                 if participant and participant.id:
                     rank = session.query(
-                        func.count(ChallengeParticipantNew.id)
+                        func.count(ChallengeParticipant.id)
                     ).filter(
                         and_(
-                            ChallengeParticipantNew.challenge_id == challenge_id,
-                            ChallengeParticipantNew.current_value > participant.current_value
+                            ChallengeParticipant.challenge_id == challenge_id,
+                            ChallengeParticipant.current_value > participant.current_value
                         )
                     ).scalar() + 1
                     
@@ -197,6 +200,9 @@ def init_challenges_api_routes(app):
                         'current_value': participant.current_value,
                         'percentage': round(percentage, 1),
                         'completed': participant.completed,
+                        'reward_granted': participant.reward_granted,
+                        'reward_granted_at': participant.reward_granted_at.isoformat() if participant.reward_granted_at else None,
+                        'reward_points_awarded': participant.reward_points_awarded,
                         'rank': rank,
                         'joined_at': participant.joined_at.isoformat() if participant.joined_at else None,
                         'last_activity': participant.last_activity_at.isoformat() if participant.last_activity_at else None
@@ -219,8 +225,8 @@ def init_challenges_api_routes(app):
             user_id = request.user_id
             
             with get_session() as session:
-                challenge = session.query(ChallengeNew).filter(
-                    ChallengeNew.id == challenge_id
+                challenge = session.query(Challenge).filter(
+                    Challenge.id == challenge_id
                 ).first()
                 
                 if not challenge:
@@ -230,17 +236,40 @@ def init_challenges_api_routes(app):
                 if challenge.status != 'active' or challenge.start_at > now or challenge.end_at < now:
                     return jsonify({'status': 400, 'message': 'Challenge is not available for joining'}), 400
                 
-                existing = session.query(ChallengeParticipantNew).filter(
+                existing = session.query(ChallengeParticipant).filter(
                     and_(
-                        ChallengeParticipantNew.challenge_id == challenge_id,
-                        ChallengeParticipantNew.user_id == user_id
+                        ChallengeParticipant.challenge_id == challenge_id,
+                        ChallengeParticipant.user_id == user_id
                     )
                 ).first()
                 
                 if existing:
                     return jsonify({'status': 400, 'message': 'Already joined this challenge'}), 400
                 
-                participant = ChallengeParticipantNew(
+                user = session.query(User.id, User.team_id).filter(User.id == user_id).first()
+                if challenge.challenge_type == 'team':
+                    if not user or not user.team_id:
+                        return jsonify({'status': 400, 'message': 'User must be in a team to join this challenge'}), 400
+                    
+                    team_participant = session.query(ChallengeParticipant).filter(
+                        and_(
+                            ChallengeParticipant.challenge_id == challenge_id,
+                            ChallengeParticipant.team_id == user.team_id
+                        )
+                    ).first()
+                    
+                    if not team_participant:
+                        team_participant = ChallengeParticipant(
+                            challenge_id=challenge_id,
+                            team_id=user.team_id,
+                            current_value=0,
+                            completed=False,
+                            joined_at=datetime.utcnow()
+                        )
+                        session.add(team_participant)
+                        session.flush()
+                
+                participant = ChallengeParticipant(
                     challenge_id=challenge_id,
                     user_id=user_id,
                     current_value=0,
@@ -271,11 +300,11 @@ def init_challenges_api_routes(app):
             user_id = request.user_id
             
             with get_session() as session:
-                participant = session.query(ChallengeParticipantNew).filter(
+                participant = session.query(ChallengeParticipant).filter(
                     and_(
-                        ChallengeParticipantNew.challenge_id == challenge_id,
-                        ChallengeParticipantNew.user_id == user_id,
-                        ChallengeParticipantNew.completed == False
+                        ChallengeParticipant.challenge_id == challenge_id,
+                        ChallengeParticipant.user_id == user_id,
+                        ChallengeParticipant.completed == False
                     )
                 ).first()
                 
@@ -303,8 +332,8 @@ def init_challenges_api_routes(app):
             limit = min(int(request.args.get('limit', 100)), 1000)
             
             with get_session() as session:
-                challenge = session.query(ChallengeNew).filter(
-                    ChallengeNew.id == challenge_id
+                challenge = session.query(Challenge).filter(
+                    Challenge.id == challenge_id
                 ).first()
                 
                 if not challenge:
@@ -312,30 +341,30 @@ def init_challenges_api_routes(app):
                 
                 target_value = challenge.target_value
                 rank_subquery = session.query(
-                    ChallengeParticipantNew.id,
+                    ChallengeParticipant.id,
                     func.rank().over(
                         order_by=[
-                            ChallengeParticipantNew.completed.desc(),
-                            ChallengeParticipantNew.current_value.desc(),
-                            ChallengeParticipantNew.completed_at.asc().nulls_last()
+                            ChallengeParticipant.completed.desc(),
+                            ChallengeParticipant.current_value.desc(),
+                            ChallengeParticipant.completed_at.asc().nulls_last()
                         ]
                     ).label('rank')
                 ).filter(
-                    ChallengeParticipantNew.challenge_id == challenge_id
+                    ChallengeParticipant.challenge_id == challenge_id
                 ).subquery()
                 
                 leaderboard = session.query(
-                    ChallengeParticipantNew,
+                    ChallengeParticipant,
                     User,
                     rank_subquery.c.rank
                 ).join(
                     User,
-                    User.id == ChallengeParticipantNew.user_id
+                    User.id == ChallengeParticipant.user_id
                 ).join(
                     rank_subquery,
-                    rank_subquery.c.id == ChallengeParticipantNew.id
+                    rank_subquery.c.id == ChallengeParticipant.id
                 ).filter(
-                    ChallengeParticipantNew.challenge_id == challenge_id
+                    ChallengeParticipant.challenge_id == challenge_id
                 ).order_by(
                     rank_subquery.c.rank
                 ).limit(limit).all()
@@ -356,15 +385,15 @@ def init_challenges_api_routes(app):
                 
                 my_position = None
                 my_participant = session.query(
-                    ChallengeParticipantNew,
+                    ChallengeParticipant,
                     rank_subquery.c.rank
                 ).join(
                     rank_subquery,
-                    rank_subquery.c.id == ChallengeParticipantNew.id
+                    rank_subquery.c.id == ChallengeParticipant.id
                 ).filter(
                     and_(
-                        ChallengeParticipantNew.challenge_id == challenge_id,
-                        ChallengeParticipantNew.user_id == user_id
+                        ChallengeParticipant.challenge_id == challenge_id,
+                        ChallengeParticipant.user_id == user_id
                     )
                 ).first()
                 
@@ -388,6 +417,92 @@ def init_challenges_api_routes(app):
             return jsonify({'status': 500, 'message': str(e)}), 500
     
     
+    @app.route('/challenges/<int:challenge_id>/team-leaderboard', methods=['GET'])
+    @token_required
+    def get_team_leaderboard(challenge_id):
+        """Получить командный лидерборд челленджа"""
+        try:
+            limit = min(int(request.args.get('limit', 100)), 1000)
+            
+            with get_session() as session:
+                challenge = session.query(Challenge).filter(
+                    Challenge.id == challenge_id
+                ).first()
+                
+                if not challenge:
+                    return jsonify({'status': 404, 'message': 'Challenge not found'}), 404
+                
+                if challenge.challenge_type != 'team':
+                    return jsonify({'status': 400, 'message': 'Challenge is not a team challenge'}), 400
+                
+                participants_stats = session.query(
+                    User.team_id.label('team_id'),
+                    func.count(ChallengeParticipant.id).label('members_count'),
+                    func.avg(ChallengeParticipant.current_value).label('avg_value'),
+                    func.max(ChallengeParticipant.current_value).label('best_value'),
+                    func.sum(ChallengeParticipant.current_value).label('sum_value')
+                ).join(
+                    User,
+                    User.id == ChallengeParticipant.user_id
+                ).filter(
+                    ChallengeParticipant.challenge_id == challenge_id,
+                    ChallengeParticipant.user_id.isnot(None),
+                    User.team_id.isnot(None)
+                ).group_by(User.team_id).subquery()
+                
+                team_rows = session.query(
+                    ChallengeParticipant,
+                    Team,
+                    participants_stats.c.members_count,
+                    participants_stats.c.avg_value,
+                    participants_stats.c.best_value
+                ).join(
+                    Team,
+                    Team.id == ChallengeParticipant.team_id
+                ).outerjoin(
+                    participants_stats,
+                    participants_stats.c.team_id == ChallengeParticipant.team_id
+                ).filter(
+                    ChallengeParticipant.challenge_id == challenge_id,
+                    ChallengeParticipant.team_id.isnot(None)
+                ).order_by(
+                    ChallengeParticipant.current_value.desc()
+                ).limit(limit).all()
+                
+                leaderboard = []
+                for index, (participant, team, members_count, avg_value, best_value) in enumerate(team_rows, start=1):
+                    total_value = participant.current_value or 0
+                    members_count = members_count or 0
+                    avg_value = avg_value or 0
+                    best_value = best_value or 0
+                    percentage = (total_value / challenge.target_value * 100) if challenge.target_value > 0 else 0
+                    
+                    leaderboard.append({
+                        'rank': index,
+                        'team_id': team.id,
+                        'team_name': team.name,
+                        'members_count': int(members_count),
+                        'total_value': total_value,
+                        'average_value': round(avg_value, 2),
+                        'best_member_value': best_value,
+                        'percentage': round(percentage, 1),
+                        'completed': participant.completed,
+                        'reward_granted': participant.reward_granted,
+                        'reward_granted_at': participant.reward_granted_at.isoformat() + 'Z' if participant.reward_granted_at else None,
+                        'reward_points_awarded': participant.reward_points_awarded,
+                        'last_activity': participant.last_activity_at.isoformat() + 'Z' if participant.last_activity_at else None
+                    })
+                
+                return jsonify({
+                    'status': 200,
+                    'leaderboard': leaderboard
+                }), 200
+        
+        except Exception as e:
+            logger.error(f"Error getting team leaderboard for challenge {challenge_id}: {e}", exc_info=True)
+            return jsonify({'status': 500, 'message': str(e)}), 500
+    
+    
     @app.route('/my-challenges', methods=['GET'])
     @token_required
     def get_my_challenges():
@@ -398,21 +513,21 @@ def init_challenges_api_routes(app):
             
             with get_session() as session:
                 query = session.query(
-                    ChallengeNew,
-                    ChallengeParticipantNew
+                    Challenge,
+                    ChallengeParticipant
                 ).join(
-                    ChallengeParticipantNew,
-                    ChallengeNew.id == ChallengeParticipantNew.challenge_id
+                    ChallengeParticipant,
+                    Challenge.id == ChallengeParticipant.challenge_id
                 ).filter(
-                    ChallengeParticipantNew.user_id == user_id
+                    ChallengeParticipant.user_id == user_id
                 )
                 
                 if status_filter == 'active':
-                    query = query.filter(ChallengeParticipantNew.completed == False)
+                    query = query.filter(ChallengeParticipant.completed == False)
                 elif status_filter == 'completed':
-                    query = query.filter(ChallengeParticipantNew.completed == True)
+                    query = query.filter(ChallengeParticipant.completed == True)
                 
-                results = query.order_by(ChallengeNew.end_at.desc()).all()
+                results = query.order_by(Challenge.end_at.desc()).all()
                 
                 challenges_data = []
                 for challenge, participant in results:
@@ -433,6 +548,9 @@ def init_challenges_api_routes(app):
                             'current_value': participant.current_value,
                             'percentage': round(percentage, 1),
                             'completed': participant.completed,
+                            'reward_granted': participant.reward_granted,
+                            'reward_granted_at': participant.reward_granted_at.isoformat() if participant.reward_granted_at else None,
+                            'reward_points_awarded': participant.reward_points_awarded,
                             'completed_at': participant.completed_at.isoformat() if participant.completed_at else None,
                             'joined_at': participant.joined_at.isoformat() if participant.joined_at else None
                         }

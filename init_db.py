@@ -9,9 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from app.infra.db.sqlalchemy_db import engine, Base
 from app.domain.models import (
     User, Team, Activity, Feed, Like, Comment, CommentLike,
-    Challenge, UserChallenge, UserChallengeStatus, TokenBlacklist,
+    Challenge, ChallengeParticipant, TokenBlacklist,
     UserProgress, PasswordReset, AuditLog, AppSettings, FeatureFlag,
-    ErrorLog, SystemLog, Task, ChallengeNew, ChallengeParticipantNew
+    ErrorLog, SystemLog, Task
 )
 from sqlalchemy import text
 import logging
@@ -98,7 +98,7 @@ def add_initial_data():
             session.add_all(activities)
             
             session.commit()
-            logger.info("✓ Начальные данные добавлены")
+        logger.info("✓ Начальные данные добавлены")
             
     except Exception as e:
         logger.error(f"✗ Ошибка при добавлении данных: {e}")

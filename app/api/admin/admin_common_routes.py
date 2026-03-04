@@ -1,7 +1,7 @@
 from flask import jsonify, request, make_response
 from app.infra.db.sqlalchemy_db import get_session
 from sqlalchemy import func, and_, case
-from app.domain.models import AppSettings, FeatureFlag, ErrorLog, SystemLog, User, Feed, Team, Activity, ChallengeNew
+from app.domain.models import AppSettings, FeatureFlag, ErrorLog, SystemLog, User, Feed, Team, Activity, Challenge
 from app.api.public.auth_routes import token_required
 from app.api.admin.admin_middleware import admin_required, log_audit
 from app.domain.schemas import AdminSettingsSchema, AdminFeatureFlagsSchema, AdminErrorStatusSchema, validate_json_data
@@ -214,11 +214,11 @@ def init_admin_common_routes(app):
                 active_users = users_query.scalar() or 0
                 
                 now = datetime.utcnow()
-                active_challenges = session.query(func.count(ChallengeNew.id)).filter(
+                active_challenges = session.query(func.count(Challenge.id)).filter(
                     and_(
-                        ChallengeNew.status == 'active',
-                        ChallengeNew.start_at <= now,
-                        ChallengeNew.end_at >= now
+                        Challenge.status == 'active',
+                        Challenge.start_at <= now,
+                        Challenge.end_at >= now
                     )
                 ).scalar() or 0
                 
@@ -477,11 +477,11 @@ def init_admin_common_routes(app):
                 total_teams = session.query(func.count(Team.id)).scalar() or 0
                 
                 now = datetime.utcnow()
-                active_challenges = session.query(func.count(ChallengeNew.id)).filter(
+                active_challenges = session.query(func.count(Challenge.id)).filter(
                     and_(
-                        ChallengeNew.status == 'active',
-                        ChallengeNew.start_at <= now,
-                        ChallengeNew.end_at >= now
+                        Challenge.status == 'active',
+                        Challenge.start_at <= now,
+                        Challenge.end_at >= now
                     )
                 ).scalar() or 0
                 
@@ -888,11 +888,11 @@ def init_admin_common_routes(app):
                     active_users = users_q.scalar() or 0
                     
                     now = datetime.utcnow()
-                    active_challenges = session.query(func.count(ChallengeNew.id)).filter(
+                    active_challenges = session.query(func.count(Challenge.id)).filter(
                         and_(
-                            ChallengeNew.status == 'active',
-                            ChallengeNew.start_at <= now,
-                            ChallengeNew.end_at >= now
+                            Challenge.status == 'active',
+                            Challenge.start_at <= now,
+                            Challenge.end_at >= now
                         )
                     ).scalar() or 0
 

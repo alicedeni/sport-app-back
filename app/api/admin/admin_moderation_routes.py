@@ -66,6 +66,10 @@ def init_admin_moderation_routes(app):
                         Comment.feed_id == feed.id
                     ).scalar() or 0
                     
+                    images_list = feed.images if feed.images else []
+                    if not images_list and feed.image:
+                        images_list = [feed.image]
+                    
                     posts_data.append({
                         'id': feed.id,
                         'authorId': feed.author_id,
@@ -82,6 +86,7 @@ def init_admin_moderation_routes(app):
                         'steps': feed.steps,
                         'description': feed.commentactivity,
                         'image': feed.image,
+                        'images': images_list,
                         'status': 'hidden' if feed.status else 'visible',
                         'timeOfPublication': feed.time_of_publication.isoformat() if feed.time_of_publication else None,
                         'timeBeginning': feed.time_beginning.strftime('%H:%M') if feed.time_beginning else None,

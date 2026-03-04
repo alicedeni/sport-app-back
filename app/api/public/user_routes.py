@@ -296,17 +296,3 @@ def init_user_routes(app):
 
         except Exception as e:
             return jsonify({'status': 500, 'error': str(e)})
-
-    # @app.route('/delete_account', methods=['DELETE'])
-    # @token_required
-    # def delete_account():
-    #     user_id = request.user_id
-    #     token = request.headers.get('Authorization').split("Bearer ")[1]
-    #     try:
-    #         execute_query('DELETE FROM users WHERE id = %s', (user_id,), delete=True)
-    #         execute_query('INSERT INTO token_blacklist (token) VALUES (%s)', (token,))
-    #         return jsonify({'status': 200, 'message': 'Account deleted successfully'})
-    #     except Exception as e:
-    #         return jsonify({'status': 500, 'error': str(e)})
-
-

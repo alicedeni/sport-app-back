@@ -12,8 +12,62 @@ from app.domain.models import Activity, Feed, User, Like, Comment
 from sqlalchemy import func
 from app.infra.services.points_service_client import get_points_client
 import logging
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+
+def validate_image_urls(images):
+    """
+    Валидация массива URL изображений
+    - Максимум 10 изображений
+    - Каждый URL должен быть валидной строкой с HTTPS
+    """
+    if not images:
+        return []
+    
+    if not isinstance(images, list):
+        raise ValueError('images must be a list')
+    
+    if len(images) > 10:
+        raise ValueError('Maximum 10 images allowed per post')
+    
+    validated_images = []
+    for img_url in images:
+        if not isinstance(img_url, str):
+            raise ValueError('All image URLs must be strings')
+        
+        if not img_url.strip():
+            continue
+        
+        parsed = urlparse(img_url)
+        if parsed.scheme != 'https':
+            raise ValueError(f'Image URL must use HTTPS: {img_url}')
+        
+        validated_images.append(img_url.strip())
+    
+    return validated_images
+
+
+def normalize_images(image=None, images=None):
+    """
+    Нормализация изображений для обратной совместимости
+    Если передан только image, преобразует в images = [image]
+    Возвращает кортеж (image, images) для сохранения обоих полей
+    """
+    if images is not None:
+        validated_images = validate_image_urls(images)
+        first_image = validated_images[0] if validated_images else None
+        return first_image, validated_images
+    
+    if image:
+        if isinstance(image, str) and image.strip():
+            parsed = urlparse(image)
+            if parsed.scheme != 'https':
+                raise ValueError(f'Image URL must use HTTPS: {image}')
+            return image, [image]
+    
+    return None, []
 
 
 def init_post_routes(app):
@@ -151,6 +205,11 @@ def init_post_routes(app):
         if missing_fields:
             raise ValueError(f'Missing required fields: {", ".join(missing_fields)}')
 
+        image, images = normalize_images(
+            image=data.get('image'),
+            images=data.get('images')
+        )
+
         return {
             'startTime': data['startTime'],
             'duration': data.get('duration'),  
@@ -159,7 +218,8 @@ def init_post_routes(app):
             'steps': data.get('step', 0) or data.get('steps', 0),  
             'description': data.get('description'),
             'verification': data.get('verification'),
-            'image': data.get('image'),
+            'image': image,
+            'images': images,
             'other': data.get('other'),
             'distance': data.get('distance'),
             'time_of_publication': datetime.utcnow(),
@@ -193,6 +253,7 @@ def init_post_routes(app):
                 time_beginning=activity_data['startTime'],
                 proof=activity_data['verification'],
                 image=activity_data['image'],
+                images=activity_data['images'],
                 steps=activity_data['steps'],
                 activity_date=activity_data['startDate'],
                 other_activity=activity_data['other'],
@@ -241,7 +302,9 @@ def init_post_routes(app):
                 'duration_hours': metrics['duration_formatted'],
                 'calories_burned': round(metrics['calories_burned']),
                 'activity_points': metrics['activity_points'],
-                'activity_data': activity_data
+                'activity_data': activity_data,
+                'image': activity_data.get('image'),
+                'images': activity_data.get('images', [])
             }
 
             return jsonify({'status': 200, 'preview_data': preview_data})
@@ -269,7 +332,7 @@ def init_post_routes(app):
                 comment_count_sq = session.query(func.count(Comment.id)).filter(Comment.feed_id == Feed.id).correlate(Feed).scalar_subquery()
                 q = session.query(
                     User.id, User.surname, User.name, User.points, User.avatar,
-                    Feed.time_of_publication, Feed.image,
+                    Feed.time_of_publication, Feed.image, Feed.images,
                     Activity.name.label('type_name'), Activity.scorecard, Activity.color, Activity.tag,
                     Feed.time_beginning, Feed.duration, Feed.distance, Feed.calories,
                     Feed.commentactivity, Feed.id.label('feed_id'),
@@ -286,21 +349,26 @@ def init_post_routes(app):
                 rows = q.order_by(Feed.time_of_publication.desc()).limit(limit).offset(offset).all()
             formatted_posts = []
             for post in rows:
-                duration = post[12]
+                duration = post[13]
                 hours, minutes = map(int, duration.split(':')) if duration else (0, 0)
                 formatted_duration = f"{hours:02}:{minutes:02}"
                 timestamp_str = post[5].isoformat() + 'Z' if post[5] else None
-                activity_type = post[21] if post[10] == 'other' and post[21] is not None else post[7]
+                activity_type = post[22] if post[11] == 'other' and post[22] is not None else post[8]
+                
+                images_list = post[7] if post[7] else []
+                if not images_list and post[6]:
+                    images_list = [post[6]]
+                
                 formatted_post = {
                     'id': post[0], 'username': post[1], 'name': post[2], 'fireCount': post[3], 'miniAvatar': post[4],
-                    'timestamp': timestamp_str, 'image': post[6], 'type': activity_type, 'scorecard': post[8],
-                    'color': post[9], 'tag': post[10], 'time': formatted_duration, 'distance': post[13], 'calories': post[14],
-                    'text': post[15], 'feed_id': post[16], 'likeCount': int(post[17] or 0), 'isLiked': (post[18] or 0) > 0,
-                    'commentCount': int(post[19] or 0), 'postfireCount': post[22], 'activityDate': post[23].strftime('%Y-%m-%d') if post[23] else None,
-                    'timeBeginning': post[11].strftime('%H:%M') if post[11] else None
+                    'timestamp': timestamp_str, 'image': post[6], 'images': images_list, 'type': activity_type, 'scorecard': post[9],
+                    'color': post[10], 'tag': post[11], 'time': formatted_duration, 'distance': post[14], 'calories': post[15],
+                    'text': post[16], 'feed_id': post[17], 'likeCount': int(post[18] or 0), 'isLiked': (post[19] or 0) > 0,
+                    'commentCount': int(post[20] or 0), 'postfireCount': post[23], 'activityDate': post[24].strftime('%Y-%m-%d') if post[24] else None,
+                    'timeBeginning': post[12].strftime('%H:%M') if post[12] else None
                 }
-                if (post[20] or 0) > 0:
-                    formatted_post['step'] = post[20]
+                if (post[21] or 0) > 0:
+                    formatted_post['step'] = post[21]
                 formatted_posts.append(formatted_post)
             formatted_posts = sorted(formatted_posts, key=lambda x: x['timestamp'], reverse=True)
             return jsonify({'status': 200, 'posts': formatted_posts})
@@ -314,6 +382,15 @@ def init_post_routes(app):
         user_id = request.user_id
         try:
             data = request.get_json()
+            
+            try:
+                image, images = normalize_images(
+                    image=data.get('image'),
+                    images=data.get('images')
+                )
+            except ValueError as e:
+                return jsonify({'status': 400, 'message': str(e)}), 400
+            
             with get_session() as session:
                 post = session.query(Feed).filter(Feed.id == post_id).first()
                 if not post:
@@ -328,7 +405,8 @@ def init_post_routes(app):
                 post.calories = data['calories']
                 post.time_beginning = data['startTime']
                 post.time_ending = data['endTime']
-                post.image = data['image']
+                post.image = image
+                post.images = images
                 session.commit()
 
                 recalculate_user_points(user_id)

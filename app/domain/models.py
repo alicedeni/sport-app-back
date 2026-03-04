@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Date, Time, ForeignKey, UniqueConstraint, Float, CheckConstraint, Index
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSON
 from sqlalchemy.orm import relationship
 from app.infra.db.sqlalchemy_db import Base
 from datetime import datetime
@@ -74,6 +74,7 @@ class Feed(Base):
     time_beginning = Column(Time)
     duration = Column(Text, default='00:00')
     image = Column(Text)
+    images = Column(JSON)
     steps = Column(Integer)
     activity_date = Column(Date)
     other_activity = Column(String)
@@ -206,7 +207,7 @@ class Task(Base):
     __tablename__ = 'tasks'
     
     id = Column(Integer, primary_key=True)
-    challenge_id = Column(Integer, ForeignKey('challenges.id'), nullable=True)
+    challenge_id = Column(Integer, ForeignKey('challenges.challenges.id'), nullable=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(String(20), default='draft') 
@@ -215,7 +216,7 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-class ChallengeNew(Base):
+class Challenge(Base):
     """Модель челленджа (схема challenges)"""
     __tablename__ = 'challenges'
     __table_args__ = (
@@ -254,7 +255,7 @@ class ChallengeNew(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class ChallengeParticipantNew(Base):
+class ChallengeParticipant(Base):
     """Модель участника челленджа (схема challenges)"""
     __tablename__ = 'challenge_participants'
     __table_args__ = (
@@ -281,3 +282,6 @@ class ChallengeParticipantNew(Base):
     completed_at = Column(DateTime)
     joined_at = Column(DateTime, default=datetime.utcnow)
     last_activity_at = Column(DateTime)
+    reward_granted = Column(Boolean, default=False)
+    reward_granted_at = Column(DateTime)
+    reward_points_awarded = Column(Integer, default=0)
